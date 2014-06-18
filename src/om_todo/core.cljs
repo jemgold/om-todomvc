@@ -1,6 +1,7 @@
 (ns om-todo.core
   (:require [om.core :as om :include-macros true]
-            [om.dom :as dom :include-macros true]
+            [om-tools.core :refer-macros [defcomponent]]
+            [om-tools.dom :as dom :include-macros true]
             [clojure.string :as string]))
 
 (enable-console-print!)
@@ -12,27 +13,25 @@
     {:title "Omygod"
      :todos [{:text "Pay Sweepstakes entry" :completed true}
              {:text "Cook dinner"}
-             {:text "Watch England lose *again*"}]
-     }))
+             {:text "Watch England lose *again*"}]}))
 
 (defn main [app owner]
   (reify
     om/IRender
     (render [this]
-      (dom/div #js {:id "todoapp"}
+      (dom/div {:id "todoapp"}
                (om/build header app)
-               (dom/section #js {:id "main"}
-                 (om/build toggle-all (:todos app))
-                 (om/build todo-list (:todos app)) )
-               (om/build footer (:todos app))
-                 ))))
+               (dom/section {:id "main"}
+                            (om/build toggle-all (:todos app))
+                            (om/build todo-list (:todos app)))
+               (om/build footer (:todos app))))))
 
 (defn todo-list [todos _]
   (reify
     om/IRender
     (render [_]
-      (apply dom/ul #js {:id "todo-list"}
-             (om/build-all todo-view todos)) ) ))
+      (dom/ul {:id "todo-list"}
+              (om/build-all todo-view todos)))))
 
 (defn todo-view [todo owner]
   (reify
@@ -40,54 +39,53 @@
     (render [this]
       (let [class (cond-> ""
                     (:completed todo) (str "completed"))]
-        (dom/li #js {:className class}
+        (dom/li {:class class}
                 (dom/input
-                  #js {:className "toggle" :type "checkbox"
-                       :checked (:completed todo)
-                       :onClick (fn [e] (om/transact! todo :completed #(not %)))})
-                (dom/label nil (:text todo) )
-                (dom/button #js {:className "destroy"} nil)
-                )))))
+                  {:class "toggle" :type "checkbox"
+                   :checked (:completed todo)
+                   :on-click (fn [e] (om/transact! todo :completed #(not %)))})
+                (dom/label (:text todo))
+                (dom/button {:class "destroy"}))))))
 
 (defn toggle-all [todos _]
   (reify
     om/IRender
     (render [_]
-      (dom/div nil
-               (dom/input
-                 #js {:id "toggle-all" :type "checkbox"})
-               (dom/label
-                 #js {:htmlFor "toggle-all"}
-                 "Mark all as completed") ))))
+      (dom/div
+        (dom/input
+          {:id "toggle-all" :type "checkbox"})
+        (dom/label
+          {:for "toggle-all"}
+          "Mark all as completed") ))))
 
 (defn header [app owner]
   (reify
     om/IRender
     (render [_]
-      (dom/section #js {:id "header"}
-                   (dom/h1 nil (:title app))
+      (dom/section {:id "header"}
+                   (dom/h1 (:title app))
                    (om/build new-todo-view app)))))
 
 (defn new-todo-view [app owner]
   (reify
     om/IRender
     (render [_]
-      (dom/input #js {:id "new-todo"
-                      :placeholder "What needs to be done?"
-                      :autoFocus true
-                      :onKeyPress #(add-todo % app owner)  }
-                      nil ) )))
+      (dom/input {:id "new-todo"
+                  :placeholder "What needs to be done?"
+                  :auto-focus true
+                  :on-key-press #(add-todo % app owner)  }
+                 ))))
 
 (defn footer [todos _]
   (reify
     om/IRender
     (render [_]
-      (dom/footer #js {:id "footer"}
+      (dom/footer {:id "footer"}
                   (om/build todos-count todos) ))))
 
 (defn todos-count [todos]
-  (dom/span #js {:id "todo-count"}
-            (dom/strong nil (remaining todos))
+  (dom/span {:id "todo-count"}
+            (dom/strong (remaining todos))
             " items left" ) )
 
 (defn remaining [todos]
