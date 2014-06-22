@@ -1,7 +1,9 @@
 (ns om-todo.core
+  (:require-macros [cljs.core.async.macros :refer [go go-loop]])
   (:require [om.core :as om :include-macros true]
             [om-tools.core :refer-macros [defcomponent]]
             [om-tools.dom :as dom :include-macros true]
+            [cljs.core.async :refer [put! chan <!]]
             [clojure.string :as string]))
 
 (enable-console-print!)
@@ -16,23 +18,32 @@
              {:text "Watch England lose *again*"}]}))
 
 (defcomponent main [app owner]
-  (render [_]
-          (dom/div
-            {:id "todoapp"}
-            (om/build header app)
-            (dom/section
-              {:id "main"}
-              (om/build toggle-all (:todos app))
-              (om/build todo-list (:todos app)))
-            (om/build footer (:todos app)))))
+  (init-state [_]
+              {:chans {:delete (chan)}})
+  (will-mount [_]
+              (let [delete (om/get-state owner [:chans :delete])]
+                (go-loop []
+                      (let [todo (<! delete)]
+                        (om/transact! app :todos
+                                      (fn [xs] (vec (remove #(= todo %) xs)))))
+                      (recur))))
+  (render-state [_ {:keys [chans]}]
+                (dom/div
+                  {:id "todoapp"}
+                  (om/build header app)
+                  (dom/section
+                    {:id "main"}
+                    (om/build toggle-all-button (:todos app))
+                    (om/build todo-list (:todos app) {:init-state chans}))
+                  (om/build footer (:todos app)))))
 
 (defcomponent todo-list [todos owner]
-  (render [_]
+  (render-state [_ chans]
           (dom/ul {:id "todo-list"}
-                  (om/build-all todo-view todos))))
+                  (om/build-all todo-view todos {:init-state chans}))))
 
 (defcomponent todo-view [todo owner]
-  (render [_]
+  (render-state [_ {:keys [delete]}]
           (let [class (cond-> ""
                         (:completed todo) (str "completed"))]
             (dom/li
@@ -40,15 +51,19 @@
               (dom/input
                 {:class "toggle" :type "checkbox"
                  :checked (:completed todo)
-                 :on-click (fn [e] (om/transact! todo :completed #(not %)))})
+                 :on-click #(toggle-completed todo)})
               (dom/label (:text todo))
-              (dom/button {:class "destroy"})))))
+              (dom/button
+                {:class "destroy"
+                 :on-click (fn [e] (put! delete @todo))})))))
 
-(defcomponent toggle-all [todos owner]
+(defcomponent toggle-all-button [todos owner]
   (render [_]
           (dom/div
             (dom/input
-              {:id "toggle-all" :type "checkbox"})
+              {:id "toggle-all" :type "checkbox"
+               :on-click #(toggle-all todos)
+               :checked (= (remaining todos) 0)})
             (dom/label
               {:for "toggle-all"}
               "Mark all as completed") )))
@@ -66,7 +81,7 @@
             {:id "new-todo"
              :placeholder "What needs to be done?"
              :auto-focus true
-             :on-key-press #(add-todo % app owner)})))
+             :on-key-press #(add-todo app owner %)})))
 
 (defcomponent footer [todos owner]
   (render [_]
@@ -74,24 +89,44 @@
             {:id "footer"}
             (om/build todos-count todos) )))
 
-(defn todos-count [todos]
-  (dom/span
-    {:id "todo-count"}
-    (dom/strong (remaining todos))
-    " items left" ))
+;; Events
 
-(defn remaining [todos]
-  (->> todos
-       (filter (fn [todo] (not (:completed todo) )))
-       count))
-
-(defn add-todo [event app owner]
+(defn add-todo [app owner event]
   (let [new-todo (.-value (om/get-node owner) )]
     (when
       (and (= (.-keyCode event) ENTER_KEY)
            (not (string/blank? new-todo)))
       (om/transact! app :todos #(conj % {:text new-todo}))
       )))
+
+(defn toggle-completed [todo]
+  (om/transact! todo :completed #(not %)))
+
+(defn toggle-all [todos]
+  (om/transact! todos
+                (fn [todos] (vec (map #(assoc % :completed (not (:completed %))) todos)))))
+
+;; Helpers
+
+(defn remaining [todos]
+  (->> todos
+       (filter (fn [todo] (not (:completed todo) )))
+       count))
+
+(defn inflect [word count]
+  (if (= count 1)
+    word
+    (str word "s")))
+
+(defn todos-count [todos]
+  (dom/span
+    {:id "todo-count"}
+    (dom/strong (remaining todos))
+    " "
+    (inflect "item" (remaining todos))
+    " left"))
+
+;; Let's go!
 
 (om/root
   main
